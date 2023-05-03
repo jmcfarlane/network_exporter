@@ -1,0 +1,12 @@
+---
+dns:
+  every: 2s
+  names:
+    - google.com
+
+icmp:
+  every: 2s
+  refresh: 5s
+  ips:
+    - 1.1.1.1
+    - 8.8.8.8
