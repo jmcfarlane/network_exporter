@@ -107,13 +107,9 @@ func dns(addr string, interval time.Duration) {
 	}()
 }
 
-func ping(addr string, interval, refresh time.Duration) {
+func setupPinger(addr string, interval, refresh time.Duration) *probing.Pinger {
 	pinger, err := probing.NewPinger(addr)
-	// I think this part is needed to recover from failures on startup. Need
-	// to test what happens during failures at runtime (does it recover?)
-	if err != nil {
-
-	}
+	log.Info().Str("addr", addr).Err(err).Msg("NewPinger")
 	pinger.Interval = interval
 	pinger.OnRecv = func(pkt *probing.Packet) {
 		var up float64
@@ -128,18 +124,18 @@ func ping(addr string, interval, refresh time.Duration) {
 		log.Info().Str("ip", pkt.IPAddr.String()).Dur("ms", pkt.Rtt).Msg("ICMP (DUP!)")
 	}
 	go pinger.Run()
+	return pinger
+}
 
-	if refresh > 0 {
-		go func() {
-			for range time.NewTicker(refresh).C {
-				start := time.Now()
-				err := pinger.Resolve()
-				dur := time.Now().Sub(start)
-				log.Info().Str("addr", addr).Dur("ms", dur).Err(err).Msg("ICMP refresh")
-				if err != nil {
-					icmpGauge.WithLabelValues(addr, "").Set(0)
-				}
-			}
-		}()
+func ping(addr string, interval, refresh time.Duration) {
+	pinger := setupPinger(addr, interval, refresh)
+	if refresh == 0 {
+		return
 	}
+	go func() {
+		for range time.NewTicker(refresh).C {
+			pinger.Stop()
+			pinger = setupPinger(addr, interval, refresh)
+		}
+	}()
 }
