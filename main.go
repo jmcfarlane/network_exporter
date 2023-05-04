@@ -38,7 +38,7 @@ var (
 	dnsHist = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: Namespace,
 		Name:      "dns_duration_seconds",
-		Buckets:   prometheus.ExponentialBuckets(0.0001, 2, 20),
+		Buckets:   prometheus.ExponentialBuckets(0.0007, 1.3, 30),
 		Help:      "DNS latency",
 	}, []string{"addr"})
 
@@ -52,7 +52,7 @@ var (
 	icmpHist = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: Namespace,
 		Name:      "icmp_duration_seconds",
-		Buckets:   prometheus.ExponentialBuckets(0.001, 2, 17),
+		Buckets:   prometheus.ExponentialBuckets(0.0007, 1.3, 30),
 		Help:      "ICMP latency",
 	}, []string{"addr", "ip"})
 
