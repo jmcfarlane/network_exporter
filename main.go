@@ -36,10 +36,12 @@ var (
 
 	// DNS
 	dnsHist = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: Namespace,
-		Name:      "dns_duration_seconds",
-		Buckets:   prometheus.ExponentialBuckets(0.0007, 1.3, 30),
-		Help:      "DNS latency",
+		Namespace:                      Namespace,
+		Name:                           "dns_duration_seconds",
+		Buckets:                        prometheus.ExponentialBuckets(0.0007, 1.3, 30),
+		NativeHistogramBucketFactor:    1.005,
+		NativeHistogramMaxBucketNumber: 100,
+		Help:                           "DNS latency",
 	}, []string{"addr"})
 
 	dnsGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
@@ -50,10 +52,12 @@ var (
 
 	// ICMP
 	icmpHist = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: Namespace,
-		Name:      "icmp_duration_seconds",
-		Buckets:   prometheus.ExponentialBuckets(0.0007, 1.3, 30),
-		Help:      "ICMP latency",
+		Namespace:                      Namespace,
+		Name:                           "icmp_duration_seconds",
+		Buckets:                        prometheus.ExponentialBuckets(0.0007, 1.3, 30),
+		NativeHistogramBucketFactor:    1.005,
+		NativeHistogramMaxBucketNumber: 100,
+		Help:                           "ICMP latency",
 	}, []string{"addr", "ip"})
 
 	icmpGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
