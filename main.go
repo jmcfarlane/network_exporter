@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"io/ioutil"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -80,8 +80,13 @@ func main() {
 		dns(name, network.DNS.Every)
 	}
 	http.Handle("/metrics", promhttp.Handler())
-	log.Info().Str("listen", *listen).Str("config", *config).Msg("Starting")
-	log.Info().Err(http.ListenAndServe(*listen, nil)).Msg("Done")
+	slog.Info("Starting",
+		slog.String("config", *config),
+		slog.String("listen", *listen),
+	)
+	if err := http.ListenAndServe(*listen, nil); err != nil {
+		slog.Error("Failed", err)
+	}
 }
 
 func getConfig() (*Network, error) {
@@ -106,14 +111,18 @@ func dns(addr string, interval time.Duration) {
 				up = 1
 			}
 			dnsGauge.WithLabelValues(addr).Set(up)
-			log.Info().Str("addr", addr).Dur("ms", dur).Err(err).Int("up", int(up)).Msg("DNS")
+			slog.Debug("DNS", slog.String("addr", addr),
+				slog.Int("up", int(up)),
+				slog.Duration("ms", dur),
+				slog.Any("err", err),
+			)
 		}
 	}()
 }
 
 func setupPinger(addr string, interval, refresh time.Duration) *probing.Pinger {
 	pinger, err := probing.NewPinger(addr)
-	log.Info().Str("addr", addr).Err(err).Msg("NewPinger")
+	slog.Info("NewPinger", slog.String("addr", addr), slog.Any("err", err))
 	pinger.Interval = interval
 	pinger.OnRecv = func(pkt *probing.Packet) {
 		var up float64
@@ -122,10 +131,17 @@ func setupPinger(addr string, interval, refresh time.Duration) *probing.Pinger {
 		}
 		icmpHist.WithLabelValues(pkt.Addr, pkt.IPAddr.String()).Observe(pkt.Rtt.Seconds())
 		icmpGauge.WithLabelValues(pkt.Addr, pkt.IPAddr.String()).Set(up)
-		log.Info().Str("ip", pkt.IPAddr.String()).Dur("ms", pkt.Rtt).Int("up", int(up)).Msg("ICMP")
+		slog.Debug("ICMP",
+			slog.String("ip", pkt.IPAddr.String()),
+			slog.Int("up", int(up)),
+			slog.Duration("ms", pkt.Rtt),
+		)
 	}
 	pinger.OnDuplicateRecv = func(pkt *probing.Packet) {
-		log.Info().Str("ip", pkt.IPAddr.String()).Dur("ms", pkt.Rtt).Msg("ICMP (DUP!)")
+		slog.Debug("ICMP (DUP!)",
+			slog.String("ip", pkt.IPAddr.String()),
+			slog.Duration("ms", pkt.Rtt),
+		)
 	}
 	go pinger.Run()
 	return pinger
@@ -134,10 +150,19 @@ func setupPinger(addr string, interval, refresh time.Duration) *probing.Pinger {
 func ping(addr string, interval, refresh time.Duration) {
 	pinger := setupPinger(addr, interval, refresh)
 	if refresh == 0 {
+		slog.Info("Refresh not configured, exiting",
+			slog.String("addr", addr),
+			slog.Duration("refresh", refresh),
+		)
 		return
 	}
 	go func() {
 		for range time.NewTicker(refresh).C {
+			slog.Info("Making fresh pinger",
+				slog.String("addr", addr),
+				slog.Duration("interval", interval),
+				slog.Duration("refesh", refresh),
+			)
 			pinger.Stop()
 			pinger = setupPinger(addr, interval, refresh)
 		}
