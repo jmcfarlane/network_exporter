@@ -2,9 +2,9 @@ package main
 
 import (
 	"flag"
-	"io/ioutil"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	probing "github.com/prometheus-community/pro-bing"
@@ -32,6 +32,7 @@ type Network struct {
 
 var (
 	config = flag.String("config", "network.yaml", "Path to config yaml file")
+	debug  = flag.Bool("debug", false, "Use debug log level")
 	listen = flag.String("listen", ":8080", "addr:port to listen on")
 
 	// DNS
@@ -69,15 +70,18 @@ var (
 
 func main() {
 	flag.Parse()
+	if *debug {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
 	network, err := getConfig()
 	if err != nil {
 		panic(err)
 	}
 	for _, ip := range network.Icmp.Ips {
-		ping(ip, network.Icmp.Every, network.Icmp.Refresh)
+		go ping(ip, network.Icmp.Every, network.Icmp.Refresh)
 	}
 	for _, name := range network.DNS.Names {
-		dns(name, network.DNS.Every)
+		go dns(name, network.DNS.Every)
 	}
 	http.Handle("/metrics", promhttp.Handler())
 	slog.Info("Starting",
@@ -85,12 +89,26 @@ func main() {
 		slog.String("listen", *listen),
 	)
 	if err := http.ListenAndServe(*listen, nil); err != nil {
-		slog.Error("Failed", err)
+		slog.Error("Server failed", slog.Any("err", err))
+	}
+}
+
+func newPingerMust(addr string) *probing.Pinger {
+	for {
+		pinger, err := probing.NewPinger(addr)
+		if err != nil {
+			slog.Error("Pinger creation failed",
+				slog.String("addr", addr),
+				slog.Any("err", err),
+			)
+			time.Sleep(time.Second * 90)
+		}
+		return pinger
 	}
 }
 
 func getConfig() (*Network, error) {
-	data, err := ioutil.ReadFile(*config)
+	data, err := os.ReadFile(*config)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +117,9 @@ func getConfig() (*Network, error) {
 }
 
 func dns(addr string, interval time.Duration) {
+	// Because this is a dns check, we don't care if there is an error getting
+	// a new Pinger. The entire point is to test action, which happens via the
+	// pinger.Resolve() check below.
 	pinger, _ := probing.NewPinger(addr)
 	go func() {
 		for range time.NewTicker(interval).C {
@@ -120,9 +141,8 @@ func dns(addr string, interval time.Duration) {
 	}()
 }
 
-func setupPinger(addr string, interval, refresh time.Duration) *probing.Pinger {
-	pinger, err := probing.NewPinger(addr)
-	slog.Info("NewPinger", slog.String("addr", addr), slog.Any("err", err))
+func setupPinger(addr string, interval time.Duration) *probing.Pinger {
+	pinger := newPingerMust(addr)
 	pinger.Interval = interval
 	pinger.OnRecv = func(pkt *probing.Packet) {
 		var up float64
@@ -148,7 +168,6 @@ func setupPinger(addr string, interval, refresh time.Duration) *probing.Pinger {
 }
 
 func ping(addr string, interval, refresh time.Duration) {
-	pinger := setupPinger(addr, interval, refresh)
 	if refresh == 0 {
 		slog.Info("Refresh not configured, exiting",
 			slog.String("addr", addr),
@@ -156,6 +175,7 @@ func ping(addr string, interval, refresh time.Duration) {
 		)
 		return
 	}
+	pinger := setupPinger(addr, interval)
 	go func() {
 		for range time.NewTicker(refresh).C {
 			slog.Info("Making fresh pinger",
@@ -164,7 +184,7 @@ func ping(addr string, interval, refresh time.Duration) {
 				slog.Duration("refesh", refresh),
 			)
 			pinger.Stop()
-			pinger = setupPinger(addr, interval, refresh)
+			pinger = setupPinger(addr, interval)
 		}
 	}()
 }
